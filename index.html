@@ -28,7 +28,6 @@
                     if (e.target.matches('.settings-button')) this.toggleModal();
                     if (e.target.matches('#save-config')) this.saveAndGenerate();
                     if (e.target.closest('.modal-overlay') && !e.target.closest('.modal-content')) this.toggleModal();
-                    if (e.target.matches('.reload-button')) this.manualReload();
                 });
 
                 this.shadowRoot.addEventListener('click', (e) => {
@@ -127,25 +126,6 @@
                 }
 
                 .settings-button:hover {
-                    background: rgba(30, 41, 59, 0.7);
-                    border-color: rgba(99, 102, 241, 0.5);
-                }
-
-                .reload-button {
-                    position: absolute;
-                    bottom: 1rem;
-                    right: 1rem;
-                    padding: 0.5rem;
-                    border-radius: 0.75rem;
-                    background: rgba(30, 41, 59, 0.5);
-                    border: 1px solid rgba(99, 102, 241, 0.3);
-                    transition: all 0.2s ease;
-                    cursor: pointer;
-                    font-size: 0.875rem;
-                    color: #ffffff;
-                }
-
-                .reload-button:hover {
                     background: rgba(30, 41, 59, 0.7);
                     border-color: rgba(99, 102, 241, 0.5);
                 }
@@ -256,7 +236,6 @@
                             Next fetch in: ${this.getNextFetchTimeString()}
                         </div>
                     </div>
-                    <button class="reload-button" aria-label="Manually reload data">↻ Reload</button>
                 </div>
                 ${this.state.modalOpen ? this.renderModal() : ''}
                 `;
@@ -393,26 +372,26 @@
             }
 
             startHourlyUpdates() {
-                const now = new Date();
-                const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0);
-                this.state.nextFetchTime = nextHour.getTime();
+                const calculateNextFetchTime = () => {
+                    const now = new Date();
+                    // Set the next fetch time to 5 minutes past the next hour
+                    const nextFetch = new Date(now);
+                    nextFetch.setHours(now.getHours() + 1, 5, 0, 0); // Next hour, 5 minutes
+                    return nextFetch.getTime();
+                };
 
+                // Set the initial next fetch time
+                this.state.nextFetchTime = calculateNextFetchTime();
+
+                // Start the timer
                 this.updateTimer = setInterval(() => {
                     const now = Date.now();
                     if (now >= this.state.nextFetchTime) {
                         this.initDataLoading(); // Fetch new data
-                        const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0);
-                        this.state.nextFetchTime = nextHour.getTime();
+                        this.state.nextFetchTime = calculateNextFetchTime(); // Reset the timer for the next hour
                     }
                     this.render(); // Re-render to update the timer display
                 }, 1000); // Update every second
-
-                this.initDataLoading(); // Initial fetch
-            }
-
-            manualReload() {
-                console.log('Manual reload triggered');
-                this.initDataLoading();
             }
 
             disconnectedCallback() {
