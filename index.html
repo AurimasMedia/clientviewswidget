@@ -21,7 +21,7 @@
                     modalOpen: false,
                     lastValue: null,
                     nextFetchTime: null,
-                    updateInterval: null
+                    updateTimer: null
                 };
 
                 this.shadowRoot.addEventListener('click', (e) => {
@@ -48,7 +48,7 @@
                 }
                 this.render();
                 if (this.state.sheetUrl) {
-                    this.initDataLoading();
+                    this.initDataLoading(); // Fetch fresh data on page load
                     this.startHourlyUpdates(); // Start hourly updates
                 }
             }
@@ -308,7 +308,8 @@
             async fetchSheetData() {
                 const proxy = 'https://api.allorigins.win/get?url=';
                 const encodedUrl = encodeURIComponent(this.state.sheetUrl);
-                const response = await fetch(`${proxy}${encodedUrl}`);
+                const cacheBuster = `&nocache=${Date.now()}`; // Add a unique timestamp to bypass caching
+                const response = await fetch(`${proxy}${encodedUrl}${cacheBuster}`);
 
                 if (!response.ok) {
                     throw new Error(`Network request failed: ${response.status} ${response.statusText}`);
@@ -399,17 +400,18 @@
                 this.updateTimer = setInterval(() => {
                     const now = Date.now();
                     if (now >= this.state.nextFetchTime) {
-                        this.initDataLoading();
+                        this.initDataLoading(); // Fetch new data
                         const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0);
                         this.state.nextFetchTime = nextHour.getTime();
                     }
-                    this.render();
-                }, 1000); // Update the timer every second
+                    this.render(); // Re-render to update the timer display
+                }, 1000); // Update every second
 
                 this.initDataLoading(); // Initial fetch
             }
 
             manualReload() {
+                console.log('Manual reload triggered');
                 this.initDataLoading();
             }
 
