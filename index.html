@@ -258,28 +258,33 @@
                 }
             }
 
-            async fetchSheetData() {
-                const proxy = 'https://api.allorigins.win/get?url=';
-                const encodedUrl = encodeURIComponent(this.state.sheetUrl);
-                const response = await fetch(`${proxy}${encodedUrl}`);
+ async fetchSheetData() {
+    // Using cors.sh as a more reliable proxy
+    const proxy = 'https://cors.sh/';
+    const encodedUrl = encodeURIComponent(this.state.sheetUrl);
+    const response = await fetch(`${proxy}${encodedUrl}`, {
+        headers: {
+            'x-cors-api-key': 'temp_f90775473ba27bad989eba3397c67049', // Free API key for testing
+        }
+    });
 
-                if (!response.ok) throw new Error('Network request failed');
+    if (!response.ok) throw new Error('Network request failed');
 
-                const { contents } = await response.json();
-                const doc = new DOMParser().parseFromString(contents, 'text/html');
+    const text = await response.text();
+    const doc = new DOMParser().parseFromString(text, 'text/html');
 
-                const cells = doc.querySelectorAll('td.s0, td.s1');
-                if (!cells.length) throw new Error('No numeric cells found');
+    const cells = doc.querySelectorAll('td.s0, td.s1');
+    if (!cells.length) throw new Error('No numeric cells found');
 
-                const total = Array.from(cells).reduce((sum, cell) => {
-                    const value = parseInt(cell.textContent.replace(/\D/g, ''), 10);
-                    return sum + (isNaN(value) ? 0 : value);
-                }, 0);
+    const total = Array.from(cells).reduce((sum, cell) => {
+        const value = parseInt(cell.textContent.replace(/\D/g, ''), 10);
+        return sum + (isNaN(value) ? 0 : value);
+    }, 0);
 
-                if (total === 0) throw new Error('All cells contain non-numeric values');
+    if (total === 0) throw new Error('All cells contain non-numeric values');
 
-                return total;
-            }
+    return total;
+}
 
             toggleModal() {
                 this.state.modalOpen = !this.state.modalOpen;
