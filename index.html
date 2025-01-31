@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live View Counter Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-[#030712] min-h-screen grid place-items-center p-4">
+    <live-view-widget class="w-full max-w-md"></live-view-widget>
+    <script>
+        class LiveViewWidget extends HTMLElement {
+            constructor() {
+                super();
+                this.attachShadow({ mode: 'open' });
+                this.state = {
+                    sheetUrl: '',
+                    loading: false,
+                    error: null,
+                    modalOpen: false,
+                    lastValue: null
+                };
+
+                this.shadowRoot.addEventListener('click', (e) => {
+                    if (e.target.matches('.settings-button')) this.toggleModal();
+                    if (e.target.matches('#save-config')) this.saveAndGenerate();
+                    if (e.target.closest('.modal-overlay') && !e.target.closest('.modal-content')) this.toggleModal();
+                });
+
+                this.shadowRoot.addEventListener('click', (e) => {
+                    if (e.target.closest('.modal-content')) e.stopPropagation();
+                });
+            }
+
+            connectedCallback() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const widgetId = urlParams.get('id');
+                if (widgetId) {
+                    try {
+                        this.state.sheetUrl = atob(widgetId);
+                    } catch (error) {
+                        this.state.error = 'Invalid configuration ID';
+                    }
+                }
+                this.render();
+                if (this.state.sheetUrl) this.initDataLoading();
+            }
+
+            render() {
+                if (this.renderTimeout) clearTimeout(this.renderTimeout);
+                this.renderTimeout = setTimeout(() => this.actualRender(), 50);
+            }
+
+            actualRender() {
+                // Your existing render code here (same as in your original)
+                this.shadowRoot.innerHTML = `
+                    <!-- Your existing styles and HTML -->
+                `;
+            }
+
+            getDisplayContent() {
+                if (this.state.error) return '⚠️';
+                if (this.state.loading) return '⏳';
+                return this.state.lastValue?.toLocaleString() || '⋯';
+            }
+
+            async initDataLoading() {
+                // Your existing initDataLoading code
+            }
+
+            async validateSheetUrl(url) {
+                // Your existing validateSheetUrl code
+            }
+
+            async fetchSheetData() {
+                // Your existing fetchSheetData code
+            }
+
+            toggleModal() {
+                this.state.modalOpen = !this.state.modalOpen;
+                this.render();
+            }
+
+            renderModal() {
+                const baseUrl = window.location.origin + window.location.pathname;
+                const embedUrl = this.state.sheetUrl ? 
+                    `${baseUrl}?id=${btoa(this.state.sheetUrl)}` : '';
+                const iframeCode = embedUrl ? 
+                    `<iframe src="${embedUrl}" width="100%" height="200" frameborder="0"></iframe>` : '';
+
+                return `
+                <div class="modal-overlay">
+                    <div class="modal-content">
+                        <h3 class="modal-header">Configure Widget</h3>
+                        <input
+                            type="url"
+                            class="modal-input"
+                            placeholder="Paste Published Sheet URL"
+                            value="${this.state.sheetUrl}"
+                        />
+                        <button class="modal-button" id="save-config">
+                            Save & Generate
+                        </button>
+                        ${this.state.sheetUrl ? `
+                        <div class="mt-4 pt-4 border-t border-gray-800/50">
+                            <p class="text-sm text-gray-400">Direct URL:</p>
+                            <code class="embed-url">
+                                ${embedUrl}
+                            </code>
+                            <p class="text-sm text-gray-400 mt-4">iframe Code:</p>
+                            <code class="embed-url">
+                                ${iframeCode}
+                            </code>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                `;
+            }
+
+            saveAndGenerate() {
+                const input = this.shadowRoot.querySelector('.modal-input');
+                const newUrl = input.value.trim();
+
+                try {
+                    this.validateSheetUrl(newUrl);
+                    this.state.sheetUrl = newUrl;
+                    this.toggleModal();
+                    this.initDataLoading();
+                } catch (error) {
+                    alert(error.message);
+                }
+            }
+        }
+
+        customElements.define('live-view-widget', LiveViewWidget);
+    </script>
+</body>
+</html>
