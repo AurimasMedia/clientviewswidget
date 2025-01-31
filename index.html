@@ -19,13 +19,16 @@
                     loading: false,
                     error: null,
                     modalOpen: false,
-                    lastValue: null
+                    lastValue: null,
+                    nextFetchTime: null,
+                    updateInterval: null
                 };
 
                 this.shadowRoot.addEventListener('click', (e) => {
                     if (e.target.matches('.settings-button')) this.toggleModal();
                     if (e.target.matches('#save-config')) this.saveAndGenerate();
                     if (e.target.closest('.modal-overlay') && !e.target.closest('.modal-content')) this.toggleModal();
+                    if (e.target.matches('.reload-button')) this.manualReload();
                 });
 
                 this.shadowRoot.addEventListener('click', (e) => {
@@ -46,7 +49,7 @@
                 this.render();
                 if (this.state.sheetUrl) {
                     this.initDataLoading();
-                    this.startLiveUpdates(); // Start live updates
+                    this.startHourlyUpdates(); // Start hourly updates
                 }
             }
 
@@ -126,6 +129,32 @@
                 .settings-button:hover {
                     background: rgba(30, 41, 59, 0.7);
                     border-color: rgba(99, 102, 241, 0.5);
+                }
+
+                .reload-button {
+                    position: absolute;
+                    bottom: 1rem;
+                    right: 1rem;
+                    padding: 0.5rem;
+                    border-radius: 0.75rem;
+                    background: rgba(30, 41, 59, 0.5);
+                    border: 1px solid rgba(99, 102, 241, 0.3);
+                    transition: all 0.2s ease;
+                    cursor: pointer;
+                    font-size: 0.875rem;
+                    color: #ffffff;
+                }
+
+                .reload-button:hover {
+                    background: rgba(30, 41, 59, 0.7);
+                    border-color: rgba(99, 102, 241, 0.5);
+                }
+
+                .timer {
+                    font-size: 0.875rem;
+                    color: #9ca3af;
+                    margin-top: 0.5rem;
+                    text-align: center;
                 }
 
                 .modal-overlay {
@@ -223,7 +252,11 @@
                             ${this.state.error}
                         </div>
                         ` : ''}
+                        <div class="timer">
+                            Next fetch in: ${this.getNextFetchTimeString()}
+                        </div>
                     </div>
+                    <button class="reload-button" aria-label="Manually reload data">↻ Reload</button>
                 </div>
                 ${this.state.modalOpen ? this.renderModal() : ''}
                 `;
@@ -233,6 +266,17 @@
                 if (this.state.error) return '⚠️';
                 if (this.state.loading) return '⏳';
                 return this.state.lastValue?.toLocaleString() || '⋯';
+            }
+
+            getNextFetchTimeString() {
+                if (!this.state.nextFetchTime) return 'Calculating...';
+
+                const now = Date.now();
+                const timeLeft = Math.max(0, this.state.nextFetchTime - now);
+                const minutes = Math.floor(timeLeft / (1000 * 60));
+                const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+
+                return `${minutes}m ${seconds}s`;
             }
 
             async initDataLoading() {
@@ -347,22 +391,30 @@
                 }
             }
 
-            startLiveUpdates(interval = 5000) {
-                this.updateInterval = setInterval(async () => {
-                    try {
-                        const data = await this.fetchSheetData();
-                        this.state.lastValue = data;
-                        this.render();
-                    } catch (error) {
-                        console.error('Live update error:', error.message);
-                        this.state.error = error.message;
-                        this.render();
+            startHourlyUpdates() {
+                const now = new Date();
+                const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0);
+                this.state.nextFetchTime = nextHour.getTime();
+
+                this.updateTimer = setInterval(() => {
+                    const now = Date.now();
+                    if (now >= this.state.nextFetchTime) {
+                        this.initDataLoading();
+                        const nextHour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours() + 1, 0, 0);
+                        this.state.nextFetchTime = nextHour.getTime();
                     }
-                }, interval);
+                    this.render();
+                }, 1000); // Update the timer every second
+
+                this.initDataLoading(); // Initial fetch
+            }
+
+            manualReload() {
+                this.initDataLoading();
             }
 
             disconnectedCallback() {
-                if (this.updateInterval) clearInterval(this.updateInterval);
+                if (this.updateTimer) clearInterval(this.updateTimer);
             }
         }
 
