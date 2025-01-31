@@ -16,40 +16,36 @@
                 this.attachShadow({ mode: 'open' });
                 this.state = {
                     sheetUrl: '',
+                    clientIdentifier: '',
                     loading: false,
                     error: null,
                     modalOpen: false,
                     lastValue: null,
                     nextFetchTime: null,
-                    updateTimer: null
+                    updateTimer: null,
+                    tempSheetUrl: '',  // Temporary state for editing
+                    tempClientIdentifier: ''  // Temporary state for editing
                 };
+            }
 
+            connectedCallback() {
+                const params = new URLSearchParams(window.location.search);
+                this.state.sheetUrl = params.get('sheetUrl') || '';
+                this.state.clientIdentifier = params.get('client') || '';
+                this.state.tempSheetUrl = this.state.sheetUrl;
+                this.state.tempClientIdentifier = this.state.clientIdentifier;
+                
                 this.shadowRoot.addEventListener('click', (e) => {
                     if (e.target.matches('.settings-button')) this.toggleModal();
                     if (e.target.matches('#save-config')) this.saveAndGenerate();
                     if (e.target.closest('.modal-overlay') && !e.target.closest('.modal-content')) this.toggleModal();
                 });
 
-                this.shadowRoot.addEventListener('click', (e) => {
-                    if (e.target.closest('.modal-content')) e.stopPropagation();
-                });
-            }
-
-            connectedCallback() {
-                const urlParams = new URLSearchParams(window.location.search);
-                const widgetId = urlParams.get('id');
-                if (widgetId) {
-                    try {
-                        this.state.sheetUrl = atob(widgetId);
-                    } catch (error) {
-                        this.state.error = 'Invalid configuration ID';
-                    }
+                if (this.state.sheetUrl && this.state.clientIdentifier) {
+                    this.initDataLoading();
+                    this.startHourlyUpdates();
                 }
                 this.render();
-                if (this.state.sheetUrl) {
-                    this.initDataLoading(); // Fetch fresh data on page load
-                    this.startHourlyUpdates(); // Start hourly updates
-                }
             }
 
             render() {
@@ -60,6 +56,7 @@
             actualRender() {
                 this.shadowRoot.innerHTML = `
                 <style>
+                /* Keep all previous styles the same */
                 * {
                     font-family: 'Inter', sans-serif;
                     box-sizing: border-box;
@@ -208,13 +205,6 @@
                     margin-top: 0.5rem;
                     text-align: center;
                 }
-
-                .mt-4 { margin-top: 1rem; }
-                .pt-4 { padding-top: 1rem; }
-                .text-sm { font-size: 0.875rem; }
-                .text-gray-400 { color: #9ca3af; }
-                .border-t { border-top-width: 1px; }
-                .border-gray-800\/50 { border-color: rgba(31, 41, 55, 0.5); }
                 </style>
 
                 <div class="widget-container">
@@ -239,12 +229,139 @@
                 </div>
                 ${this.state.modalOpen ? this.renderModal() : ''}
                 `;
+
+                // Add input handlers after rendering
+                if (this.state.modalOpen) {
+                    this.shadowRoot.querySelector('#sheet-url').addEventListener('input', (e) => {
+                        this.state.tempSheetUrl = e.target.value;
+                    });
+                    this.shadowRoot.querySelector('#client-identifier').addEventListener('input', (e) => {
+                        this.state.tempClientIdentifier = e.target.value;
+                    });
+                }
             }
 
-            getDisplayContent() {
-                if (this.state.error) return '⚠️';
-                if (this.state.loading) return '⏳';
-                return this.state.lastValue?.toLocaleString() || '⋯';
+            renderModal() {
+                const baseUrl = window.location.origin + window.location.pathname;
+                const embedUrl = this.state.sheetUrl && this.state.clientIdentifier 
+                    ? `${baseUrl}?sheetUrl=${encodeURIComponent(this.state.sheetUrl)}&client=${encodeURIComponent(this.state.clientIdentifier)}`
+                    : '';
+
+                return `
+                <div class="modal-overlay">
+                    <div class="modal-content">
+                        <h3 class="modal-header">Widget Configuration</h3>
+                        
+                        <label class="text-gray-400 text-sm mb-2">Google Sheet URL:</label>
+                        <input
+                            type="url"
+                            class="modal-input"
+                            placeholder="Paste published Google Sheet URL"
+                            value="${this.state.tempSheetUrl}"
+                            id="sheet-url"
+                        />
+
+                        <label class="text-gray-400 text-sm mb-2">Client Identifier:</label>
+                        <input
+                            type="text"
+                            class="modal-input"
+                            placeholder="Enter exact client name from sheet (e.g., 'Client 1 - DD')"
+                            value="${this.state.tempClientIdentifier}"
+                            id="client-identifier"
+                        />
+
+                        <button class="modal-button" id="save-config">
+                            Save Configuration
+                        </button>
+
+                        ${embedUrl ? `
+                        <div class="mt-4 pt-4 border-t border-gray-800/50">
+                            <p class="text-gray-400 text-sm">Embed URL:</p>
+                            <code class="embed-url">${embedUrl}</code>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                `;
+            }
+
+            saveAndGenerate() {
+                this.state.sheetUrl = this.state.tempSheetUrl.trim();
+                this.state.clientIdentifier = this.state.tempClientIdentifier.trim();
+
+                if (!this.state.sheetUrl || !this.state.clientIdentifier) {
+                    alert('Please fill in both fields');
+                    return;
+                }
+
+                // Update URL parameters
+                const newUrl = new URL(window.location.href);
+                newUrl.searchParams.set('sheetUrl', this.state.sheetUrl);
+                newUrl.searchParams.set('client', this.state.clientIdentifier);
+                window.history.replaceState({}, '', newUrl);
+
+                this.toggleModal();
+                this.initDataLoading();
+                this.startHourlyUpdates();
+            }
+
+            /* Keep other methods (initDataLoading, fetchSheetData, etc) same as previous version */
+            async initDataLoading() {
+                try {
+                    this.state.loading = true;
+                    this.state.error = null;
+                    this.render();
+
+                    const data = await this.fetchSheetData();
+                    this.state.lastValue = data;
+                } catch (error) {
+                    this.state.error = error.message;
+                    console.error('Widget Error:', error);
+                } finally {
+                    this.state.loading = false;
+                    this.render();
+                }
+            }
+
+            async fetchSheetData() {
+                const proxy = 'https://api.allorigins.win/get?url=';
+                const encodedUrl = encodeURIComponent(this.state.sheetUrl);
+                const cacheBuster = `&nocache=${Date.now()}`;
+                const response = await fetch(`${proxy}${encodedUrl}${cacheBuster}`);
+
+                if (!response.ok) {
+                    throw new Error(`Network error: ${response.status}`);
+                }
+
+                const { contents } = await response.json();
+                const doc = new DOMParser().parseFromString(contents, 'text/html');
+                
+                // Find header row with client identifiers
+                const headers = Array.from(doc.querySelectorAll('tr:first-child td'));
+                const targetIndex = headers.findIndex(td => 
+                    td.textContent.trim() === this.state.clientIdentifier
+                );
+
+                if (targetIndex === -1) {
+                    throw new Error(`Client "${this.state.clientIdentifier}" not found in sheet`);
+                }
+
+                // Get value from row 2 (data row) in the same column
+                const dataRow = doc.querySelectorAll('tr:nth-child(2) td');
+                const targetCell = dataRow[targetIndex];
+
+                if (!targetCell) {
+                    throw new Error('Data cell not found');
+                }
+
+                const rawValue = targetCell.textContent.trim();
+                const parsedValue = parseInt(rawValue.replace(/,/g, ''), 10);
+                
+                if (isNaN(parsedValue)) {
+                    throw new Error('Invalid numeric value');
+                }
+
+                return parsedValue;
             }
 
             getNextFetchTimeString() {
@@ -258,144 +375,43 @@
                 return `${minutes}m ${seconds}s`;
             }
 
-            async initDataLoading() {
-                try {
-                    this.state.loading = true;
-                    this.state.error = null;
+            startHourlyUpdates() {
+                const calculateNextFetchTime = () => {
+                    const now = new Date();
+                    const nextFetch = new Date(now);
+                    nextFetch.setHours(now.getHours() + 1, 5, 0, 0);
+                    return nextFetch.getTime();
+                };
+
+                this.state.nextFetchTime = calculateNextFetchTime();
+                this.updateTimer = setInterval(() => {
+                    const now = Date.now();
+                    if (now >= this.state.nextFetchTime) {
+                        this.initDataLoading();
+                        this.state.nextFetchTime = calculateNextFetchTime();
+                    }
                     this.render();
-
-                    await this.validateSheetUrl(this.state.sheetUrl);
-                    const data = await this.fetchSheetData();
-
-                    this.state.lastValue = data;
-                } catch (error) {
-                    this.state.error = error.message;
-                    console.error('Widget Error:', error);
-                } finally {
-                    this.state.loading = false;
-                    this.render();
-                }
-            }
-
-            async validateSheetUrl(url) {
-                const sheetPattern = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/.+\/pubhtml/;
-                if (!sheetPattern.test(url)) {
-                    throw new Error('Invalid Google Sheets URL format');
-                }
-            }
-
-            async fetchSheetData() {
-                const proxy = 'https://api.allorigins.win/get?url=';
-                const encodedUrl = encodeURIComponent(this.state.sheetUrl);
-                const cacheBuster = `&nocache=${Date.now()}`; // Add a unique timestamp to bypass caching
-                const response = await fetch(`${proxy}${encodedUrl}${cacheBuster}`);
-
-                if (!response.ok) {
-                    throw new Error(`Network request failed: ${response.status} ${response.statusText}`);
-                }
-
-                const { contents } = await response.json();
-                console.log('Fetched contents:', contents);
-
-                const doc = new DOMParser().parseFromString(contents, 'text/html');
-
-                // Extract the value from the second cell (<td class="s1">)
-                const secondCell = doc.querySelector('td.s1');
-                if (!secondCell) {
-                    throw new Error('Second cell not found in the sheet');
-                }
-
-                const rawValue = secondCell.textContent.trim();
-                const parsedValue = parseInt(rawValue.replace(/,/g, ''), 10);
-
-                if (isNaN(parsedValue)) {
-                    throw new Error('Invalid numeric value in the second cell');
-                }
-
-                return parsedValue;
+                }, 1000);
             }
 
             toggleModal() {
                 this.state.modalOpen = !this.state.modalOpen;
-                this.render();
-            }
-
-            renderModal() {
-                const baseUrl = window.location.origin + window.location.pathname;
-                const embedUrl = this.state.sheetUrl ? 
-                    `${baseUrl}?id=${btoa(this.state.sheetUrl)}` : '';
-                const iframeCode = embedUrl ? 
-                    `<iframe src="${embedUrl}" width="100%" height="200" frameborder="0"></iframe>` : '';
-
-                return `
-                <div class="modal-overlay">
-                    <div class="modal-content">
-                        <h3 class="modal-header">Configure Widget</h3>
-                        <input
-                            type="url"
-                            class="modal-input"
-                            placeholder="Paste Published Sheet URL"
-                            value="${this.state.sheetUrl}"
-                        />
-                        <button class="modal-button" id="save-config">
-                            Save & Generate
-                        </button>
-                        ${this.state.sheetUrl ? `
-                        <div class="mt-4 pt-4 border-t border-gray-800/50">
-                            <p class="text-sm text-gray-400">Direct URL:</p>
-                            <code class="embed-url">
-                                ${embedUrl}
-                            </code>
-                            <p class="text-sm text-gray-400 mt-4">iframe Code:</p>
-                            <code class="embed-url">
-                                ${iframeCode}
-                            </code>
-                        </div>
-                        ` : ''}
-                    </div>
-                </div>
-                `;
-            }
-
-            saveAndGenerate() {
-                const input = this.shadowRoot.querySelector('.modal-input');
-                const newUrl = input.value.trim();
-
-                try {
-                    this.validateSheetUrl(newUrl);
-                    this.state.sheetUrl = newUrl;
-                    this.toggleModal();
-                    this.initDataLoading();
-                } catch (error) {
-                    alert(error.message);
+                // Reset temp values when opening modal
+                if (this.state.modalOpen) {
+                    this.state.tempSheetUrl = this.state.sheetUrl;
+                    this.state.tempClientIdentifier = this.state.clientIdentifier;
                 }
-            }
-
-            startHourlyUpdates() {
-                const calculateNextFetchTime = () => {
-                    const now = new Date();
-                    // Set the next fetch time to 5 minutes past the next hour
-                    const nextFetch = new Date(now);
-                    nextFetch.setHours(now.getHours() + 1, 5, 0, 0); // Next hour, 5 minutes
-                    return nextFetch.getTime();
-                };
-
-                // Set the initial next fetch time
-                this.state.nextFetchTime = calculateNextFetchTime();
-
-                // Start the timer
-                this.updateTimer = setInterval(() => {
-                    const now = Date.now();
-                    if (now >= this.state.nextFetchTime) {
-                        this.initDataLoading(); // Fetch new data
-                        this.state.nextFetchTime = calculateNextFetchTime(); // Reset the timer for the next hour
-                    }
-                    this.render(); // Re-render to update the timer display
-                }, 1000); // Update every second
+                this.render();
             }
 
             disconnectedCallback() {
                 if (this.updateTimer) clearInterval(this.updateTimer);
+            }
+
+            getDisplayContent() {
+                if (this.state.error) return '⚠️';
+                if (this.state.loading) return '⏳';
+                return this.state.lastValue?.toLocaleString() || '⋯';
             }
         }
 
